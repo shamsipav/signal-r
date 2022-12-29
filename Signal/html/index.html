@@ -3,28 +3,43 @@
 <head>
     <meta charset="utf-8" />
     <title>METANIT.COM</title>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/ru.js"></script>
 </head>
 <body>
-    <h2>Общий чат</h2>
-    <p><a href="logout">Выйти</a></p>
+    <div class="container">
+        <div class="d-flex">
+            <div>
+                <h2>Общий чат</h2>
+                <span id="userName"></span>
+                <p><a href="logout">Выйти</a></p>
+                <div id="chatroom"></div>
 
-    <div id="chatroom"></div>
+                <div id="userForm">
+                    <p>
+                        Введите сообщение:<br />
+                        <input type="text" id="message" />
+                    </p>
+                    <input type="button" id="sendBtn" value="Отправить" />
+                </div>
+            </div>
+            <div>
+                <h2>Участники</h2>
+                <div id="usersList">
 
-    <div id="userForm">
-        <p>
-            Введите сообщение:<br />
-            <input type="text" id="message" />
-        </p>
-        <input type="button" id="sendBtn" value="Отправить" />
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
     <script>
+        dayjs.locale('ru')
+
         const hubConnection = new signalR.HubConnectionBuilder()
             .withUrl("/chat")
             .build();
         
-        // отправка сообщения от простого пользователя
         document.getElementById("sendBtn").addEventListener("click", () => {
             const message = document.getElementById("message").value;
 
@@ -32,49 +47,78 @@
                 .catch(error => console.error(error));
         });
 
-        // получение сообщения от сервера
-        hubConnection.on("Receive", (message, userName) => {
-            
-            // создаем элемент <b> для имени пользователя
+        hubConnection.on("Receive", (message, userName, sendTime) => {
             const userNameElem = document.createElement("b");
             userNameElem.textContent = `${userName}: `;
             
-            // создает элемент <p> для сообщения пользователя
             const elem = document.createElement("p");
             elem.appendChild(userNameElem);
             elem.appendChild(document.createTextNode(message));
-            
-            var firstElem = document.getElementById("chatroom").firstChild;
-            document.getElementById("chatroom").insertBefore(elem, firstElem);
+            const correctTime = dayjs(sendTime).format('HH:mm');
+            elem.appendChild(document.createTextNode(` [${correctTime}]`));
+
+            document.getElementById("chatroom").appendChild(elem);
         });
 
         hubConnection.on("Notify", function (message, users) {
-            console.log('Users list: ', users)
-            //let usersCount = document.getElementById('usersCount');
-            //usersCount.innerHTML = `(${users.length})`
+            if (users.length > 0) {{
+                document.getElementById('usersList').innerHTML = ''
 
-            //for (i = 0; i < users.length; i++) {
-            //    let userId = document.getElementById('userId').value();
-            //    console.log('userId: ', userId)
+                var ul = document.createElement('ul');
 
-            //    if (userId != users[i].ConnectionId) {
-            //        const firstElem = document.getElementById("chatroom").firstChild;
-            //        document.getElementById("chatroom").insertBefore(users[i].ConnectionId, firstElem);
-            //    }
-            //}
+                document.getElementById('usersList').appendChild(ul);
+                users.forEach(renderProductList);
+            }}
 
-            //const notifyElem = document.createElement("b");
-            //notifyElem.textContent = message;
-            //const elem = document.createElement("p");
-            //elem.appendChild(notifyElem);
-            //const firstElem = document.getElementById("chatroom").firstChild;
-            //document.getElementById("chatroom").insertBefore(elem, firstElem);
+            function renderProductList(element, index, arr) {
+                var li = document.createElement('li');
+                li.setAttribute('class','item');
+                ul.appendChild(li);
+                li.innerHTML = li.innerHTML + element.name;
+            }
         });
+
+        hubConnection.on("Messages", function (messages) {
+            if (messages.length > 0) {
+                messages.forEach(renderMessageList);
+            }
+
+            function renderMessageList(element) {
+                const userNameElem = document.createElement("b");
+                userNameElem.textContent = `${element.userName}: `;
+                
+                const elem = document.createElement("p");
+                elem.appendChild(userNameElem);
+                elem.appendChild(document.createTextNode(element.text));
+                const correctTime = dayjs(element.sendTime).format('HH:mm');
+                elem.appendChild(document.createTextNode(` [${correctTime}]`));
+                document.getElementById("chatroom").appendChild(elem);
+            }
+        });;
         
         hubConnection.start()
             .then(() => document.getElementById("sendBtn").disabled = false)
             .catch((err) => console.error(err));
 
     </script>
+    <!-- TODO: Move this to file -->
+    <style>
+        .container {
+            max-width: 1250px;
+            margin: 0 auto;
+            padding: 0px 25px;
+        }
+        .d-flex {
+            display: flex;
+        }
+
+        #chatroom {
+            width: 30vw;
+            height: 40vh;
+            background-color: #d3d3d354;
+            padding: 10px 10px 0px 10px;
+            overflow-y: auto;
+        }
+    </style>
 </body>
 </html>

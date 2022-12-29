@@ -15,40 +15,60 @@ namespace Signal.Classes
 
         public async Task Send(string message)
         {
-            string userName = Context.User.FindFirst(ClaimTypes.NameIdentifier).Value;
+            string userName = Context.User.FindFirst(ClaimTypes.Name).Value;
+            DateTime sendTime = DateTime.Now;
 
-            await Clients.All.SendAsync("Receive", message, userName);
+            /* TODO: Change userName to UserID */
+            Message sendMessage = new Message { Text = message, SendTime = sendTime, UserName = userName };
+            _chatDBContext.Messages.Update(sendMessage);
+            _chatDBContext.SaveChanges();
+
+            await Clients.All.SendAsync("Receive", message, userName, sendTime);
+        }
+
+        public async Task SendTest(string message)
+        {
+            await Clients.All.SendAsync("Receive", message);
         }
 
         public override async Task OnConnectedAsync()
         {
-            string email = Context.User.FindFirst(ClaimTypes.Name).Value;
+            string email = Context.User.FindFirst(ClaimTypes.NameIdentifier).Value;
             User? user = _chatDBContext.Users.FirstOrDefault(u => u.Email == email);
 
             user.Online = true;
             _chatDBContext.Users.Update(user);
             _chatDBContext.SaveChanges();
 
-            await Clients.All.SendAsync("Notify", $"{user.Name} вошел в чат");
+            // Список всех пользователей онлайн
+            List<User> onlineUsers = _chatDBContext.Users
+                .Where(u => u.Online)
+                .ToList();
+            
+            // Отправляем вошедшему клиенту список всех сообщений в общем чате
+            List<Message> messages = _chatDBContext.Messages.ToList();
+            await Clients.User(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value).SendAsync("Messages", messages);
+
+            await Clients.All.SendAsync("Notify", $"{user.Name} вошел в чат", onlineUsers);
             await base.OnConnectedAsync();
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            string email = Context.User.FindFirst(ClaimTypes.Name).Value;
+            string email = Context.User.FindFirst(ClaimTypes.NameIdentifier).Value;
             User? user = _chatDBContext.Users.FirstOrDefault(u => u.Email == email);
 
             user.Online = false;
             _chatDBContext.Users.Update(user);
             _chatDBContext.SaveChanges();
 
-            await Clients.All.SendAsync("Notify", $"{user.Name} покинул чат");
-            await base.OnDisconnectedAsync(exception);
-        }
+            // Список всех пользователей онлайн
+            List<User> onlineUsers = _chatDBContext.Users
+                .Where(u => u.Online)
+                .ToList();
 
-        public List<User> GetUsersList()
-        {
-            return (List<User>)_chatDBContext.Users.Where(u => u.Online == true);
+            await Clients.All.SendAsync("Notify", $"{user.Name} покинул чат", onlineUsers);
+            await base.OnDisconnectedAsync(exception);
         }
     }
 }

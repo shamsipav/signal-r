@@ -5,6 +5,7 @@ using Signal.Classes;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using System;
+using Hangfire;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,8 +50,8 @@ app.MapPost("/login", async (string? returnUrl, HttpContext context, ChatDBConte
 
     var claims = new List<Claim>
     {
-        new Claim(ClaimsIdentity.DefaultNameClaimType, user.Email),
-        new Claim(ClaimTypes.NameIdentifier, user.Name)
+        new Claim(ClaimsIdentity.DefaultNameClaimType, user.Name),
+        new Claim(ClaimTypes.NameIdentifier, user.Email)
     };
     var claimsIdentity = new ClaimsIdentity(claims, "Cookies");
     var claimsPrincipal = new ClaimsPrincipal(claimsIdentity);
@@ -92,7 +93,9 @@ app.MapPost("/register", (string? returnUrl, HttpContext context, ChatDBContext 
 });
 
 app.MapGet("/", [Authorize] async (HttpContext context) =>
-    await SendHtmlAsync(context, "html/index.html"));
+{
+    await SendHtmlAsync(context, "html/index.html");
+});
 
 
 app.MapGet("/logout", async (HttpContext context) =>
