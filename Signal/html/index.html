@@ -1,0 +1,80 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>METANIT.COM</title>
+</head>
+<body>
+    <h2>Общий чат</h2>
+    <p><a href="logout">Выйти</a></p>
+
+    <div id="chatroom"></div>
+
+    <div id="userForm">
+        <p>
+            Введите сообщение:<br />
+            <input type="text" id="message" />
+        </p>
+        <input type="button" id="sendBtn" value="Отправить" />
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
+    <script>
+        const hubConnection = new signalR.HubConnectionBuilder()
+            .withUrl("/chat")
+            .build();
+        
+        // отправка сообщения от простого пользователя
+        document.getElementById("sendBtn").addEventListener("click", () => {
+            const message = document.getElementById("message").value;
+
+            hubConnection.invoke("Send", message)
+                .catch(error => console.error(error));
+        });
+
+        // получение сообщения от сервера
+        hubConnection.on("Receive", (message, userName) => {
+            
+            // создаем элемент <b> для имени пользователя
+            const userNameElem = document.createElement("b");
+            userNameElem.textContent = `${userName}: `;
+            
+            // создает элемент <p> для сообщения пользователя
+            const elem = document.createElement("p");
+            elem.appendChild(userNameElem);
+            elem.appendChild(document.createTextNode(message));
+            
+            var firstElem = document.getElementById("chatroom").firstChild;
+            document.getElementById("chatroom").insertBefore(elem, firstElem);
+        });
+
+        hubConnection.on("Notify", function (message, users) {
+            console.log('Users list: ', users)
+            //let usersCount = document.getElementById('usersCount');
+            //usersCount.innerHTML = `(${users.length})`
+
+            //for (i = 0; i < users.length; i++) {
+            //    let userId = document.getElementById('userId').value();
+            //    console.log('userId: ', userId)
+
+            //    if (userId != users[i].ConnectionId) {
+            //        const firstElem = document.getElementById("chatroom").firstChild;
+            //        document.getElementById("chatroom").insertBefore(users[i].ConnectionId, firstElem);
+            //    }
+            //}
+
+            //const notifyElem = document.createElement("b");
+            //notifyElem.textContent = message;
+            //const elem = document.createElement("p");
+            //elem.appendChild(notifyElem);
+            //const firstElem = document.getElementById("chatroom").firstChild;
+            //document.getElementById("chatroom").insertBefore(elem, firstElem);
+        });
+        
+        hubConnection.start()
+            .then(() => document.getElementById("sendBtn").disabled = false)
+            .catch((err) => console.error(err));
+
+    </script>
+</body>
+</html>
