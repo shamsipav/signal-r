@@ -1,6 +1,11 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using System.Security.Claims;
+using AutoMapper.QueryableExtensions;
 
 namespace Signal.Classes
 {
@@ -13,22 +18,36 @@ namespace Signal.Classes
             _chatDBContext = chatDBContext;
         }
 
+        static MapperConfiguration config = new MapperConfiguration(cfg => cfg.CreateProjection<User, UserDTO>());
+
         public async Task Send(string message)
         {
-            string userName = Context.User.FindFirst(ClaimTypes.Name).Value;
+            string authorEmail = Context.User.FindFirst(ClaimTypes.NameIdentifier).Value;
+
+            // Пример использования AutoMapper - на клиент передаётся объект без пароля
+            var author = _chatDBContext.Users.AsNoTracking().ProjectTo<UserDTO>(config).FirstOrDefault(u => u.Email == authorEmail);
             DateTime sendTime = DateTime.Now;
 
-            /* TODO: Change userName to UserID */
-            Message sendMessage = new Message { Text = message, SendTime = sendTime, UserName = userName };
-            _chatDBContext.Messages.Update(sendMessage);
+            Message sendMessage = new Message { Text = message, SendTime = sendTime, UserId = author.Id };
+            _chatDBContext.Messages.Add(sendMessage);
             _chatDBContext.SaveChanges();
 
-            await Clients.All.SendAsync("Receive", message, userName, sendTime);
+            await Clients.All.SendAsync("Receive", message, author, sendTime);
         }
 
-        public async Task SendTest(string message)
+        public async Task SendToUser(string message, int sendToId)
         {
-            await Clients.All.SendAsync("Receive", message);
+            string authorEmail = Context.User.FindFirst(ClaimTypes.NameIdentifier).Value;
+            var author = _chatDBContext.Users.AsNoTracking().ProjectTo<UserDTO>(config).FirstOrDefault(u => u.Email == authorEmail);
+
+            User user = _chatDBContext.Users.AsNoTracking().FirstOrDefault(u => u.Id == sendToId);
+            string emailSendTo = user.Email;
+
+            DateTime sendTime = DateTime.Now;
+
+            // Показываем сообщение двум пользователям (автору и получателю)
+            await Clients.User(emailSendTo).SendAsync("MessageTo", message, author, sendTime);
+            await Clients.User(authorEmail).SendAsync("MessageTo", message, author, sendTime);
         }
 
         public override async Task OnConnectedAsync()
@@ -44,11 +63,16 @@ namespace Signal.Classes
             List<User> onlineUsers = _chatDBContext.Users
                 .Where(u => u.Online)
                 .ToList();
-            
-            // Отправляем вошедшему клиенту список всех сообщений в общем чате
-            List<Message> messages = _chatDBContext.Messages.ToList();
-            await Clients.User(Context.User.FindFirst(ClaimTypes.NameIdentifier).Value).SendAsync("Messages", messages);
 
+            // Отправляем вошедшему клиенту список всех сообщений в общем чате
+            List<Message> messagesList = _chatDBContext.Messages.Include(u => u.User).AsNoTracking().ToList();
+
+            var serializerSettings = new JsonSerializerSettings{ ContractResolver = new CamelCasePropertyNamesContractResolver() };
+            var messages = JsonConvert.SerializeObject(messagesList, serializerSettings);
+
+            await Clients.User(email).SendAsync("Connect", user.Id, user.Name, messages);
+
+            // Обновляем список пользователей онлайн
             await Clients.All.SendAsync("Notify", $"{user.Name} вошел в чат", onlineUsers);
             await base.OnConnectedAsync();
         }

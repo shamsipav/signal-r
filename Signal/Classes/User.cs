@@ -1,4 +1,7 @@
-﻿namespace Signal.Classes
+﻿
+using Newtonsoft.Json;
+
+namespace Signal.Classes
 {
     public class User
     {
@@ -9,5 +12,8 @@
         public string Password { get; set; }
 
         public bool Online { get; set; } = false;
+
+        [JsonIgnore]
+        public List<Message>? Messages { get; set; }
     }
 }

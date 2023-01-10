@@ -11,9 +11,10 @@
         <div class="d-flex">
             <div>
                 <h2>Общий чат</h2>
-                <span id="userName"></span>
+                <p>Привет, <span id="userName"></span></p>
+                <input hidden id="userId" />
                 <p><a href="logout">Выйти</a></p>
-                <div id="chatroom"></div>
+                <div class="chatroom" id="chatroom"></div>
 
                 <div id="userForm">
                     <p>
@@ -23,11 +24,12 @@
                     <input type="button" id="sendBtn" value="Отправить" />
                 </div>
             </div>
-            <div>
-                <h2>Участники</h2>
-                <div id="usersList">
-
+            <div class="d-flex">
+                <div>
+                    <h2>Участники</h2>
+                    <div id="usersList"></div>
                 </div>
+                <div id="sendToChat"></div>
             </div>
         </div>
     </div>
@@ -35,6 +37,32 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
     <script>
         dayjs.locale('ru')
+
+        let showMessage = (message, author, sendTime, chatroomId) => {
+            const userNameElem = document.createElement("b");
+            userNameElem.textContent = `${author.name}: `;
+
+            const elem = document.createElement("p");
+            elem.appendChild(userNameElem);
+            elem.appendChild(document.createTextNode(message));
+            const correctTime = dayjs(sendTime).format('DD.MM.YYYY, HH:mm');
+            elem.appendChild(document.createTextNode(` [${correctTime}]`));
+
+            document.getElementById(chatroomId).appendChild(elem);
+        }
+
+        let showHangfireMessage = (message) => {
+            const userNameElem = document.createElement("b");
+            userNameElem.textContent = `Бот: `;
+
+            const elem = document.createElement("p");
+            elem.appendChild(userNameElem);
+            elem.appendChild(document.createTextNode(message));
+            const correctTime = dayjs(new Date()).format('DD.MM.YYYY, HH:mm');
+            elem.appendChild(document.createTextNode(` [${correctTime}]`));
+
+            document.getElementById('chatroom').appendChild(elem);
+        }
 
         const hubConnection = new signalR.HubConnectionBuilder()
             .withUrl("/chat")
@@ -47,54 +75,82 @@
                 .catch(error => console.error(error));
         });
 
-        hubConnection.on("Receive", (message, userName, sendTime) => {
-            const userNameElem = document.createElement("b");
-            userNameElem.textContent = `${userName}: `;
-            
-            const elem = document.createElement("p");
-            elem.appendChild(userNameElem);
-            elem.appendChild(document.createTextNode(message));
-            const correctTime = dayjs(sendTime).format('HH:mm');
-            elem.appendChild(document.createTextNode(` [${correctTime}]`));
-
-            document.getElementById("chatroom").appendChild(elem);
+        hubConnection.on("Receive", (message, author, sendTime) => {
+            showMessage(message, author, sendTime, 'chatroom')
         });
 
-        hubConnection.on("Notify", function (message, users) {
-            if (users.length > 0) {{
+        hubConnection.on("Hangfire", (message) => {
+            console.log(message)
+            showHangfireMessage(message)
+        });
+
+        hubConnection.on("Notify", function (notify, users) {
+            if (users.length > 0) {
                 document.getElementById('usersList').innerHTML = ''
 
                 var ul = document.createElement('ul');
 
                 document.getElementById('usersList').appendChild(ul);
-                users.forEach(renderProductList);
-            }}
+                const userId = document.getElementById('userId').value;
+                const usersFiltered = users.filter((user) => user.id != userId)
+                usersFiltered.forEach(renderProductList);
+            }
 
-            function renderProductList(element, index, arr) {
+            function renderProductList(user) {
                 var li = document.createElement('li');
                 li.setAttribute('class','item');
                 ul.appendChild(li);
-                li.innerHTML = li.innerHTML + element.name;
+                li.innerHTML = `
+                    <div>
+                        <span>${user.name}</span>
+                        <button onclick="sendToChatOpen(${user.id})">Открыть чат</button>
+                    </div>
+                `;
             }
         });
 
-        hubConnection.on("Messages", function (messages) {
-            if (messages.length > 0) {
-                messages.forEach(renderMessageList);
+        hubConnection.on("MessageTo", function (message, author, sendTime) {
+            showMessage(message, author, sendTime, 'chatroomTo')
+        });
+
+        hubConnection.on("Connect", function (userId, userName, messages) {
+            const messagesList = JSON.parse(messages);
+
+            const userNameElement = document.getElementById('userName');
+            const userIdElement = document.getElementById('userId');
+
+            if (userId && userName) {
+                userNameElement.innerHTML = userName;
+                userIdElement.value = userId;
             }
 
-            function renderMessageList(element) {
-                const userNameElem = document.createElement("b");
-                userNameElem.textContent = `${element.userName}: `;
-                
-                const elem = document.createElement("p");
-                elem.appendChild(userNameElem);
-                elem.appendChild(document.createTextNode(element.text));
-                const correctTime = dayjs(element.sendTime).format('HH:mm');
-                elem.appendChild(document.createTextNode(` [${correctTime}]`));
-                document.getElementById("chatroom").appendChild(elem);
+            if (messagesList.length > 0) {
+                messagesList.forEach(renderMessageList);
             }
-        });;
+
+            function renderMessageList(message) {
+                showMessage(message.text, message.user, message.sendTime, 'chatroom')
+            }
+        });
+
+        let sendToChatOpen = (userId) => {
+            const sendToChat = document.getElementById('sendToChat');
+            sendToChat.innerHTML = `
+                <div>
+                    <div class="chatroom" id="chatroomTo"></div>
+                    <input id="sendToInput" placeholder="Введите сообщение..." />
+                    <button onclick="sendTo(${userId})">Отправить</button>
+                </div>
+            `;
+        }
+
+        let sendTo = (userId) => {
+            const sendToId = userId;
+            const message = document.getElementById('sendToInput').value;
+
+            hubConnection.invoke("SendToUser", message, sendToId)
+                .catch(error => console.error(error));
+        };
         
         hubConnection.start()
             .then(() => document.getElementById("sendBtn").disabled = false)
@@ -112,12 +168,16 @@
             display: flex;
         }
 
-        #chatroom {
+        .chatroom {
             width: 30vw;
             height: 40vh;
             background-color: #d3d3d354;
             padding: 10px 10px 0px 10px;
             overflow-y: auto;
+        }
+
+        .align-rigth {
+            text-align: right;
         }
     </style>
 </body>

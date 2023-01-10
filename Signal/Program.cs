@@ -4,8 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Signal.Classes;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using System;
 using Hangfire;
+using Hangfire.Storage.SQLite;
+using AutoMapper;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,10 +19,26 @@ builder.Services.AddSignalR();
 var connectionString = builder.Configuration.GetConnectionString("ChatDbConnection");
 builder.Services.AddDbContext<ChatDBContext>(options => options.UseSqlite(connectionString));
 
+// Подключаем Hangfire
+GlobalConfiguration.Configuration.UseSQLiteStorage();
+builder.Services.AddHangfire(configuration => configuration
+            .UseSimpleAssemblyNameTypeSerializer()
+            .UseRecommendedSerializerSettings()
+            .UseSQLiteStorage());
+
+// Add the processing server as IHostedService
+builder.Services.AddHangfireServer();
+
 var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseHangfireDashboard();
+
+// Отправляем рандомный анекдот каждую минуту
+string cronExp = "* * * * *";
+RecurringJob.AddOrUpdate<ChatHubHelper>("MyJob", h => h.SendHangfire(Anekdot.GetRandomAnekdot()), cronExp);
 
 app.MapGet("/login", async context =>
     await SendHtmlAsync(context, "html/login.html"));
@@ -101,6 +118,7 @@ app.MapGet("/", [Authorize] async (HttpContext context) =>
 app.MapGet("/logout", async (HttpContext context) =>
 {
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
     return Results.Redirect("/login");
 });
 
